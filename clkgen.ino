@@ -96,7 +96,8 @@ void proc_clk(uint8_t chan) {
   static uint8_t rstDivCnt[num_clks] = {0};
   static bool clk[num_clks] = {false};
   if (clkDivCnt[chan] >= clkDiv[chan]) {
-    if ((clkDiv[chan] != 0 ) || (clk[chan] != mclk)) {
+    // do some crude synchronisation: if divisor is odd, keep in phase with mclk
+    if ((clkDiv[chan] & 1) || (clk[chan] != mclk)) {
       clk[chan] = not clk[chan]; // toggle clock
       setClk(chan, clk[chan]);
       clkDivCnt[chan] = 0;
