@@ -2,6 +2,10 @@
  * Clock generator for modular synthesiser
  * It provides clock pulses to drive sequencers and stuff
  * tested on Arduino pro mini (328P)
+ * controls consist of 5 pots:
+ * MCLK sets the tempo of the master clock
+ * CLKDIV sets a divider for each of 2 clock outputs. clk = mclk / N where N is between 1 and 8
+ * RSTDIV sets a divider for each of 2 reset outputs. Each reset will give a pulse every N clock cycles where N is between 1 and 8
  */
 
 // Pins
