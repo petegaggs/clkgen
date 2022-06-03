@@ -9,31 +9,43 @@
  */
 
 // Pins
-const int num_clks = 2;
+const int NUM_CLKS = 2;
+const int MAX_CLK_DIV = 8;
+const int MAX_RST_DIV = 8;
 #define ADC_MCLK_PIN A0
-uint8_t adc_clk_div_pin[num_clks] = {1, 2}; //A1, A2
-uint8_t adc_rst_div_pin[num_clks] = {4, 3}; //A4, A3
+uint8_t adc_clk_div_pin[NUM_CLKS] = {1, 2}; //A1, A2
+uint8_t adc_rst_div_pin[NUM_CLKS] = {4, 3}; //A4, A3
 
 #define MCLK_LED_PIN 2
-int clk_led_pin[num_clks] = {3, 5};
-int rst_led_pin[num_clks] = {4, 6};
-int clk_out_pin[num_clks] = {7, 11};
-int rst_out_pin[num_clks] = {8, 12};
+int clk_led_pin[NUM_CLKS] = {3, 5};
+int rst_led_pin[NUM_CLKS] = {4, 6};
+int clk_out_pin[NUM_CLKS] = {7, 11};
+int rst_out_pin[NUM_CLKS] = {8, 12};
 
 uint16_t mclkTempo;
-uint8_t clkDiv[num_clks];
-uint8_t rstDiv[num_clks];
 unsigned long currentMillis;
 unsigned long previousMillis = 0;
 bool mclk = false;
 
+uint8_t clkCount[MAX_CLK_DIV] = {0}; // array of counters for clock dividers
+bool clk[MAX_CLK_DIV] = {false}; // divided clocks
+
+uint8_t rstCount[MAX_CLK_DIV][MAX_RST_DIV] = {0}; // array of counters for reset dividers
+bool rst[MAX_CLK_DIV][MAX_RST_DIV]; // array of all possible resets
+
 void setup() {
   pinMode(MCLK_LED_PIN, OUTPUT);
-  for (int i=0; i<2; i++) {
+  for (int i=0; i<NUM_CLKS; i++) {
     pinMode(clk_led_pin[i], OUTPUT);
     pinMode(clk_out_pin[i], OUTPUT);
     pinMode(rst_led_pin[i], OUTPUT);
     pinMode(rst_out_pin[i], OUTPUT);
+    setRst(i, true);
+  }
+  for (int i=0; i<MAX_CLK_DIV; i++) {
+    for (int j=0; j<MAX_RST_DIV; j++) {
+      rst[i][j] = true; // start with reset asserted
+    }
   }
 }
 
@@ -90,53 +102,61 @@ void setRstLed(uint8_t chan, bool val) {
   }
 }
 
-void proc_clk(uint8_t chan) {
-  // process one clk / reset channel. Called on both rising and falling edges of master clock
-  static uint8_t clkDivCnt[num_clks] = {0};
-  static uint8_t rstDivCnt[num_clks] = {0};
-  static bool clk[num_clks] = {false};
-  if (clkDivCnt[chan] >= clkDiv[chan]) {
-    // do some crude synchronisation: if divisor is odd, keep in phase with mclk
-    if ((clkDiv[chan] & 1) || (clk[chan] != mclk)) {
-      clk[chan] = not clk[chan]; // toggle clock
-      setClk(chan, clk[chan]);
-      clkDivCnt[chan] = 0;
-      if (clk[chan] == false) {
-        // falling edge
-        if (rstDivCnt[chan] >= rstDiv[chan]) {
-          setRst(chan, true);
-          rstDivCnt[chan] = 0;
-        } else {
-          setRst(chan, false);
-          setRstLed(chan, false);
-          rstDivCnt[chan] += 1;
-        }
-      } else {
-        // rising edge
-        if (rstDivCnt[chan] == 0) {
-          // turn on reset led
-          setRstLed(chan, true);
-        }
+void incRstCounters(int clkDiv) {
+  // increment the reset dividors associated with one divided clock
+  for (int i=0; i<MAX_RST_DIV; i++) {
+    if (rstCount[clkDiv][i] == i) {
+      rstCount[clkDiv][i] = 0;
+      rst[clkDiv][i] = true;
+    } else {
+      rstCount[clkDiv][i] += 1;
+      rst[clkDiv][i] = false;
+    }
+  }
+}
+
+void incCounters() {
+  // increment the clock divider counters
+  for (int i=0; i<MAX_CLK_DIV; i++) {
+    if (clkCount[i] == 0) {
+      clk[i] = not clk[i]; // toggle
+      if (clk[i] == false) {
+        incRstCounters(i); 
       }
     }
-  } else {
-    clkDivCnt[chan] += 1;
-  }  
+    if (clkCount[i] == i) {
+      clkCount[i] = 0;
+    } else {
+      clkCount[i] += 1;
+    }
+  }
+}
+
+void setOutputs() {
+  // select the clock outputs
+  for (int i=0; i< NUM_CLKS; i++) {
+    uint8_t divSel = getClkDiv(i);
+    bool clkOut = clk[divSel];
+    setClk(i, clkOut);
+    uint8_t rstSel = getRstDiv(i);
+    bool rstOut = rst[divSel][rstSel];
+    setRst(i, rstOut);
+    if (clkOut) {
+      setRstLed(i, rstOut); // light reset led only when clk is high, for asthetic reasons
+    } else {
+      setRstLed(i, false);
+    }
+  }
 }
 
 void loop() {
   mclkTempo = getMclkTempo();
-  for (int i=0; i< num_clks; i++) {
-    clkDiv[i] = getClkDiv(i);
-    rstDiv[i] = getRstDiv(i);
-  }
   currentMillis = millis();
   if (currentMillis - previousMillis > mclkTempo) {
     previousMillis = currentMillis;
-    mclk = not mclk;
+    mclk = not mclk; // toggle
     setMclk(mclk);
-    for (int i=0; i< num_clks; i++) {
-      proc_clk(i);
-    }
+    incCounters();
+    setOutputs();
   }
 }
