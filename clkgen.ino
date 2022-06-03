@@ -141,11 +141,9 @@ void setOutputs() {
     uint8_t rstSel = getRstDiv(i);
     bool rstOut = rst[divSel][rstSel];
     setRst(i, rstOut);
-    if (clkOut) {
-      setRstLed(i, rstOut); // light reset led only when clk is high, for asthetic reasons
-    } else {
-      setRstLed(i, false);
-    }
+    // light reset led only when clk is high, for asthetic reasons
+    bool ledState = clkOut ? rstOut : false;
+    setRstLed(i, ledState);
   }
 }
 
